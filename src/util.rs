@@ -36,6 +36,9 @@ where
         let path = base.join(tmpname(prefix, suffix, random_len));
         return match f(path) {
             Err(ref e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
+            // AddrInUse can happen if we're creating a UNIX domain socket and
+            // the path already exists.
+            Err(ref e) if e.kind() == io::ErrorKind::AddrInUse => continue,
             res => res,
         };
     }

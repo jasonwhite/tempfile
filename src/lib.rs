@@ -534,4 +534,123 @@ impl<'a, 'b> Builder<'a, 'b> {
 
         util::create_helper(dir, self.prefix, self.suffix, self.random_len, dir::create)
     }
+
+    /// Attempts to create a temporary file (or file-like object) using the
+    /// provided closure inside of [`std::env::temp_dir()`]. The closure is
+    /// passed a temporary file path and returns an [`std::io::Result`]. If the
+    /// closure returns one of the following errors, then another randomized
+    /// file path is tried:
+    ///  - [`std::io::ErrorKind::AlreadyExists`]
+    ///  - [`std::io::ErrorKind::AddrInUse`]
+    ///
+    /// This can be helpful for taking full control over the file creation, but
+    /// leaving the temporary file path construction up to the library. This
+    /// also enables creating a temporary UNIX domain socket, since it is not
+    /// possible to bind to a socket that already exists.
+    ///
+    /// Note that [`Builder::append`] is ignored when using [`Builder::make`].
+    ///
+    /// # Security
+    ///
+    /// See [the security][security] docs on `NamedTempFile`.
+    ///
+    /// # Resource leaking
+    ///
+    /// See [the resource leaking][resource-leaking] docs on `NamedTempFile`.
+    ///
+    /// # Errors
+    ///
+    /// If the file cannot be created, `Err` is returned.
+    ///
+    /// # Examples
+    /// ```
+    /// # use std::io;
+    /// # fn main() {
+    /// #     if let Err(_) = run() {
+    /// #         ::std::process::exit(1);
+    /// #     }
+    /// # }
+    /// # fn run() -> Result<(), io::Error> {
+    /// # use tempfile::Builder;
+    /// # #[cfg(unix)]
+    /// use std::os::unix::net::UnixListener;
+    /// # #[cfg(unix)]
+    /// let tempsock = Builder::new().make(|path| UnixListener::bind(path))?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// [security]: struct.NamedTempFile.html#security
+    /// [resource-leaking]: struct.NamedTempFile.html#resource-leaking
+    pub fn make<F, R>(&self, f: F) -> io::Result<NamedTempFile<R>>
+    where
+        F: Fn(&Path) -> io::Result<R>,
+    {
+        self.make_in(&env::temp_dir(), f)
+    }
+
+    /// Attempts to create a temporary file (or file-like object) using the
+    /// provided closure inside of `dir`. The closure is passed a temporary file
+    /// path and returns an [`std::io::Result`]. If the closure returns one of
+    /// the following errors, then another randomized file path is tried:
+    ///  - [`std::io::ErrorKind::AlreadyExists`]
+    ///  - [`std::io::ErrorKind::AddrInUse`]
+    ///
+    /// This can be helpful for taking full control over the file creation, but
+    /// leaving the temporary file path construction up to the library. This
+    /// also enables creating a temporary UNIX domain socket, since it is not
+    /// possible to bind to a socket that already exists.
+    ///
+    /// Note that [`Builder::append`] is ignored when using [`Builder::make_in`].
+    ///
+    /// # Security
+    ///
+    /// See [the security][security] docs on `NamedTempFile`.
+    ///
+    /// # Resource leaking
+    ///
+    /// See [the resource leaking][resource-leaking] docs on `NamedTempFile`.
+    ///
+    /// # Errors
+    ///
+    /// If the file cannot be created, `Err` is returned.
+    ///
+    /// # Examples
+    /// ```
+    /// # use std::io;
+    /// # fn main() {
+    /// #     if let Err(_) = run() {
+    /// #         ::std::process::exit(1);
+    /// #     }
+    /// # }
+    /// # fn run() -> Result<(), io::Error> {
+    /// # use tempfile::Builder;
+    /// # #[cfg(unix)]
+    /// use std::os::unix::net::UnixListener;
+    /// # #[cfg(unix)]
+    /// let tempsock = Builder::new().make_in("./", |path| UnixListener::bind(path))?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// [security]: struct.NamedTempFile.html#security
+    /// [resource-leaking]: struct.NamedTempFile.html#resource-leaking
+    pub fn make_in<F, R, P>(&self, dir: P, f: F) -> io::Result<NamedTempFile<R>>
+    where
+        F: Fn(&Path) -> io::Result<R>,
+        P: AsRef<Path>,
+    {
+        util::create_helper(
+            dir.as_ref(),
+            self.prefix,
+            self.suffix,
+            self.random_len,
+            move |path| {
+                Ok(NamedTempFile::from_parts(
+                    f(&path)?,
+                    TempPath::from_path(path),
+                ))
+            }
+        )
+    }
 }
